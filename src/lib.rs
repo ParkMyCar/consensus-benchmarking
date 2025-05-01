@@ -23,7 +23,7 @@ pub struct PostgresClient {
 impl PostgresClient {
     pub fn open(pg_config: tokio_postgres::Config) -> Result<Self, Box<dyn std::error::Error>> {
         let pool_config = ManagerConfig {
-            recycling_method: RecyclingMethod::Fast,
+            recycling_method: RecyclingMethod::Clean,
         };
 
         let connector = TlsConnector::builder()
