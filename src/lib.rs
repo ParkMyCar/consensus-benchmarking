@@ -3,8 +3,7 @@ use std::sync::atomic::AtomicUsize;
 use std::time::Duration;
 
 use deadpool_postgres::{
-    Hook, HookError, HookErrorCause, ManagerConfig, Object, Pool, PoolError, RecyclingMethod,
-    Runtime,
+    Hook, HookError, ManagerConfig, Object, Pool, PoolError, RecyclingMethod, Runtime,
 };
 use native_tls::TlsConnector;
 use postgres_native_tls::MakeTlsConnector;
@@ -42,7 +41,7 @@ impl PostgresClient {
                     tracing::warn!("creating connection");
                     client.batch_execute(
                     "SET SESSION CHARACTERISTICS AS TRANSACTION ISOLATION LEVEL REPEATABLE READ",
-                ).await.map_err(|e| HookError::Abort(HookErrorCause::Backend(e)))
+                ).await.map_err(|e| HookError::Backend(e))
                 })
             }))
             .build()

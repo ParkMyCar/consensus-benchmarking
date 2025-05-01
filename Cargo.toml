@@ -9,7 +9,7 @@ name = "generate"
 [dependencies]
 anyhow = "1"
 clap = { version = "4", features = ["derive"] }
-deadpool-postgres = "0.10.3"
+deadpool-postgres = "0.14"
 futures = "0.3"
 native-tls = "0.2"
 postgres-native-tls = "0.5"
