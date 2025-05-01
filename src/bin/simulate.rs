@@ -1,3 +1,11 @@
+/*
+cargo r --bin simulate -- \
+    --url <url> \
+    --port <port> \
+    --username <username> \
+    --password <password>
+*/
+
 use clap::Parser;
 use consensus_benchmarking::PostgresClient;
 use rand::rngs::SmallRng;
@@ -142,7 +150,7 @@ impl ShardSimulation {
                 num_failures = 1;
             }
 
-            // Scale the sleep based on 
+            // Scale the sleep based on
             let sleep_duration = self.sleep_duration() * num_failures;
             if num_failures > 5 {
                 tracing::info!(?sleep_duration, shard = %self.shard, "sleeping");
@@ -154,6 +162,22 @@ impl ShardSimulation {
         }
     }
 
+    async fn update_head(&mut self) -> Result<(), anyhow::Error> {
+        static HEAD_QUERY: &str = "SELECT sequence_number, data FROM materialize1.consensus
+             WHERE shard = $1 ORDER BY sequence_number DESC LIMIT 1";
+
+        let connection = self.client.get_connection().await?;
+        let statement = connection.prepare_cached(HEAD_QUERY).await?;
+        let mut result = connection.query(&statement, &[&self.shard]).await?;
+        let row = result.pop().expect("at least 1");
+        assert!(result.is_empty(), "at most 1");
+
+        let max_seq_no = row.get("sequence_number");
+        self.max_seq_no = max_seq_no;
+
+        Ok(())
+    }
+
     async fn append(&mut self) -> Result<(), anyhow::Error> {
         static APPEND_QUERY_A: &str =
             "INSERT INTO materialize1.consensus (shard, sequence_number, data)
@@ -163,8 +187,7 @@ impl ShardSimulation {
                 ORDER BY sequence_number DESC LIMIT 1) = $4;
         ";
 
-        static APPEND_QUERY_B: &str = 
-        "WITH last_seq AS (
+        static APPEND_QUERY_B: &str = "WITH last_seq AS (
             SELECT sequence_number
             FROM materialize1.consensus
             WHERE shard = $1
@@ -192,7 +215,11 @@ impl ShardSimulation {
             )
             .await?;
 
-        if num_rows == 1 {
+        if num_rows == 0 {
+            tracing::debug!(%expct_seq_no, shard = %self.shard, "wrong expected sequence number");
+            self.update_head().await?;
+            Err(anyhow::anyhow!("had to update sequence number"))
+        } else if num_rows == 1 {
             tracing::debug!(%next_seq_no, shard = %self.shard, "appended");
             self.max_seq_no = next_seq_no;
             self.state_num_appends += 1;
