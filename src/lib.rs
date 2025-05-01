@@ -1,3 +1,5 @@
+use std::ops::Deref;
+use std::sync::atomic::AtomicUsize;
 use std::time::Duration;
 
 use deadpool_postgres::{
@@ -9,6 +11,8 @@ use postgres_native_tls::MakeTlsConnector;
 
 const DEFAULT_WAIT_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(60);
 const DEFAULT_MAX_SIZE: usize = 120;
+
+static COUNTER: AtomicUsize = AtomicUsize::new(0);
 
 #[derive(Clone)]
 pub struct PostgresClient {
@@ -34,6 +38,7 @@ impl PostgresClient {
             .max_size(DEFAULT_MAX_SIZE)
             .post_create(Hook::async_fn(move |client, _| {
                 Box::pin(async move {
+                    tracing::warn!("creating connection");
                     client.batch_execute(
                     "SET SESSION CHARACTERISTICS AS TRANSACTION ISOLATION LEVEL REPEATABLE READ",
                 ).await.map_err(|e| HookError::Abort(HookErrorCause::Backend(e)))
@@ -45,7 +50,35 @@ impl PostgresClient {
         Ok(PostgresClient { conn_pool })
     }
 
-    pub async fn get_connection(&self) -> Result<Object, PoolError> {
-        self.conn_pool.get().await
+    pub async fn get_connection(&self) -> Result<ConnectionWrapper, PoolError> {
+        let conn = self.conn_pool.get().await?;
+        Ok(ConnectionWrapper::new(conn))
+    }
+}
+
+pub struct ConnectionWrapper {
+    conn: Object,
+    idx: usize,
+}
+
+impl ConnectionWrapper {
+    pub fn new(obj: Object) -> ConnectionWrapper {
+        let idx = COUNTER.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        tracing::info!(%idx, "returning new connection");
+        ConnectionWrapper { conn: obj, idx }
+    }
+}
+
+impl Deref for ConnectionWrapper {
+    type Target = Object;
+
+    fn deref(&self) -> &Self::Target {
+        &self.conn
+    }
+}
+
+impl Drop for ConnectionWrapper {
+    fn drop(&mut self) {
+        tracing::info!(idx = %self.idx, "dropping connection");
     }
 }

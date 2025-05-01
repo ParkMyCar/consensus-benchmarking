@@ -260,7 +260,7 @@ impl ShardSimulation {
         let connection = self.client.get_connection().await?;
         let expct_seq_no = self.max_seq_no;
         let next_seq_no = expct_seq_no.checked_add(1).unwrap();
-        let data = self.random_state();
+        let data = vec![42u8; 8];
 
         let start = Instant::now();
         let statement = connection.prepare_cached(APPEND_QUERY_B).await?;
