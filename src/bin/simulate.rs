@@ -213,7 +213,7 @@ impl ShardSimulation {
 
         let expct_seq_no = self.max_seq_no;
         let next_seq_no = expct_seq_no.checked_add(1).unwrap();
-        let data = vec![42u8; 8];
+        let data = self.random_state();
 
         let num_rows = connection
             .execute(
@@ -258,7 +258,7 @@ impl ShardSimulation {
     }
 
     fn sleep_duration(&mut self) -> std::time::Duration {
-        let normal = Normal::new(20.0, 5.0).unwrap();
+        let normal = Normal::new(70.0, 20.0).unwrap();
         let sleep: f64 = self.rng.sample(normal);
         let sleep = sleep.abs().round() as u64;
 

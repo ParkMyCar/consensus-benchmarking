@@ -35,7 +35,7 @@ impl PostgresClient {
             .post_create(Hook::async_fn(move |client, _| {
                 Box::pin(async move {
                     client.batch_execute(
-                    "SET SESSION CHARACTERISTICS AS TRANSACTION ISOLATION LEVEL SERIALIZABLE",
+                    "SET SESSION CHARACTERISTICS AS TRANSACTION ISOLATION LEVEL REPEATABLE READ",
                 ).await.map_err(|e| HookError::Abort(HookErrorCause::Backend(e)))
                 })
             }))
