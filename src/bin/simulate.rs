@@ -6,7 +6,7 @@ cargo r --bin simulate -- \
 use std::collections::HashMap;
 use std::str::FromStr;
 use std::sync::Arc;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use clap::Parser;
 use consensus_benchmarking::PostgresClient;
@@ -186,13 +186,8 @@ impl ShardSimulation {
 
     pub async fn run(&mut self) {
         let mut num_failures = 1;
-<<<<<<< HEAD
-        loop {
-            tracing::debug!(shard = %self.shard, "running iteration");
-
-=======
         for _ in 0..self.iterations {
->>>>>>> 666841b (Add metrics and adjust command line options)
+            tracing::debug!(shard = %self.shard, "running iteration");
             let result = if let Some(point) = self.should_truncate() {
                 self.truncate(point).await
             } else {
