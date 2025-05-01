@@ -25,3 +25,4 @@ tokio-postgres = "0.7.8"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3.19", features = ["env-filter", "json"] }
 uuid = { version = "1", features = ["v4"] }
+hdrhistogram = "7.5.4"

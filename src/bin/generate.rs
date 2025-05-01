@@ -1,12 +1,9 @@
 /*
 cargo r --bin generate -- \
-    --url <url> \
-    --port <port> \
-    --username <username> \
-    --password <password>
+    --url postgres://<user>:<pass>@<host>:<port>/<dbname>
 */
 
-use std::sync::Arc;
+use std::{str::FromStr, sync::Arc};
 
 use clap::Parser;
 use consensus_benchmarking::PostgresClient;
@@ -20,18 +17,12 @@ const MAX_STATE_BYTES: u32 = 4000;
 #[derive(clap::Parser, Debug)]
 #[command(version, about)]
 struct Args {
-    /// Url of the database.
+    /// Url of the database, e.g. postgres://<user>:<password>@<host>:<port>/<dbname>.
     #[arg(long)]
     url: String,
-    /// Port to connect to.
+    /// Do not use TLS for DB connection.
     #[arg(long)]
-    port: Option<u16>,
-    /// Username to connect as.
-    #[arg(long)]
-    username: String,
-    /// Password to connect with.
-    #[arg(long)]
-    password: String,
+    notls: bool,
     /// Seed to use for the rng to generate data.
     #[arg(long)]
     seed: Option<String>,
@@ -41,14 +32,9 @@ struct Args {
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args = Args::parse();
 
-    let mut pg_config = tokio_postgres::Config::new();
-    pg_config
-        .user(args.username)
-        .password(args.password)
-        .host(args.url)
-        .ssl_mode(SslMode::Require);
-    if let Some(port) = args.port {
-        pg_config.port(port);
+    let mut pg_config = tokio_postgres::Config::from_str(&args.url)?;
+    if !args.notls {
+        pg_config.ssl_mode(SslMode::Require);
     }
 
     let pool = Arc::new(PostgresClient::open(pg_config)?);

@@ -1,18 +1,20 @@
 /*
 cargo r --bin simulate -- \
-    --url <url> \
-    --port <port> \
-    --username <username> \
-    --password <password>
+    --url postgres://<user>:<pass>@<host>:<port>/<dbname> --iterations 100
 */
 
-use std::time::Duration;
+use std::collections::HashMap;
+use std::str::FromStr;
+use std::sync::Arc;
+use std::time::Instant;
 
 use clap::Parser;
 use consensus_benchmarking::PostgresClient;
+use hdrhistogram::{Histogram, RecordError};
 use rand::rngs::SmallRng;
 use rand::{Rng, RngCore, SeedableRng};
 use rand_distr::Normal;
+use tokio::sync::RwLock;
 use tokio_postgres::config::SslMode;
 use tracing_subscriber::EnvFilter;
 
@@ -23,21 +25,47 @@ const MAX_STATE_BYTES: u32 = 4000;
 #[derive(clap::Parser, Debug)]
 #[command(version, about)]
 struct Args {
-    /// Url of the database.
+    /// Url of the database, e.g. postgres://<user>:<password>@<host>:<port>/<dbname>.
     #[arg(long)]
     url: String,
-    /// Port to connect to.
+    /// Do not use TLS for DB connection.
     #[arg(long)]
-    port: Option<u16>,
-    /// Username to connect as.
-    #[arg(long)]
-    username: String,
-    /// Password to connect with.
-    #[arg(long)]
-    password: String,
+    notls: bool,
     /// Seed to use for the rng to generate data.
     #[arg(long)]
     seed: Option<String>,
+    /// Number of iterations to run.
+    #[arg(long, default_value_t = 10)]
+    iterations: u32,
+}
+
+struct Metrics {
+    histograms: HashMap<String, RwLock<Histogram<u64>>>,
+}
+impl Metrics {
+    pub fn new<T: IntoIterator<Item = String>>(operations: T) -> Self {
+        Metrics {
+            histograms: HashMap::from_iter(operations.into_iter().map(|key| {
+                (
+                    key,
+                    RwLock::new(Histogram::<u64>::new_with_bounds(1, 3_600_000, 2).unwrap()),
+                )
+            })),
+        }
+    }
+
+    pub async fn record_measure(&self, op: &str, value: u64) -> Result<(), RecordError> {
+        self.histograms.get(op).unwrap().write().await.record(value)
+    }
+
+    pub async fn get_map(&self) -> HashMap<String, Histogram<u64>> {
+        let mut res = HashMap::with_capacity(self.histograms.capacity());
+        for (op, locker) in self.histograms.iter() {
+            let hist = locker.read().await.clone();
+            res.insert(op.clone(), hist);
+        }
+        res
+    }
 }
 
 #[tokio::main]
@@ -47,15 +75,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .init();
     let args = Args::parse();
 
-    let mut pg_config = tokio_postgres::Config::new();
-    pg_config
-        .user(args.username)
-        .password(args.password)
-        .host(args.url)
-        .ssl_mode(SslMode::Require);
-    if let Some(port) = args.port {
-        pg_config.port(port);
+    let mut pg_config = tokio_postgres::Config::from_str(&args.url)?;
+    if !args.notls {
+        pg_config.ssl_mode(SslMode::Require);
     }
+
     let pool = PostgresClient::open(pg_config)?;
     let mut rng = rand::rng();
 
@@ -69,9 +93,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .collect();
     tracing::info!(num_shards = %shards.len(), "starting simulation");
 
+    let metrics = Arc::new(Metrics::new(["append".into(), "truncate".into()]));
     let mut tasks = Vec::with_capacity(shards.len());
     for shard in shards {
-        let mut simulation = ShardSimulation::new(pool.clone(), &mut rng, shard).await?;
+        let mut simulation = ShardSimulation::new(
+            pool.clone(),
+            &mut rng,
+            shard,
+            metrics.clone(),
+            args.iterations,
+        )
+        .await?;
         let handle = tokio::spawn(async move {
             simulation.run().await;
         });
@@ -80,7 +112,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let results = futures::future::join_all(tasks).await;
     println!("{results:?}");
-
+    for (op, histogram) in metrics.get_map().await.iter() {
+        println!("=== operation: {op}");
+        for v in histogram.iter_recorded() {
+            println!(
+                "{}'th percentile of data is {} with {} samples",
+                v.percentile(),
+                v.value_iterated_to(),
+                v.count_at_value()
+            );
+        }
+    }
     Ok(())
 }
 
@@ -100,6 +142,10 @@ struct ShardSimulation {
     state_num_appends: u32,
     /// The number of truncates we've made.
     state_num_deletes: u32,
+    /// A place to record operational latency.
+    metrics: Arc<Metrics>,
+    /// The number of iterations to execute.
+    iterations: u32,
 }
 
 impl ShardSimulation {
@@ -108,6 +154,8 @@ impl ShardSimulation {
         client: PostgresClient,
         rng: &mut impl Rng,
         shard: String,
+        metrics: Arc<Metrics>,
+        iterations: u32,
     ) -> Result<Self, Box<dyn std::error::Error>> {
         let connection = client.get_connection().await?;
         let mut result = connection
@@ -131,14 +179,20 @@ impl ShardSimulation {
             rng,
             state_num_appends: 0,
             state_num_deletes: 0,
+            metrics,
+            iterations,
         })
     }
 
     pub async fn run(&mut self) {
         let mut num_failures = 1;
+<<<<<<< HEAD
         loop {
             tracing::debug!(shard = %self.shard, "running iteration");
 
+=======
+        for _ in 0..self.iterations {
+>>>>>>> 666841b (Add metrics and adjust command line options)
             let result = if let Some(point) = self.should_truncate() {
                 self.truncate(point).await
             } else {
@@ -209,17 +263,20 @@ impl ShardSimulation {
         ";
 
         let connection = self.client.get_connection().await?;
-        let statement = connection.prepare_cached(APPEND_QUERY_B).await?;
-
         let expct_seq_no = self.max_seq_no;
         let next_seq_no = expct_seq_no.checked_add(1).unwrap();
         let data = self.random_state();
 
+        let start = Instant::now();
+        let statement = connection.prepare_cached(APPEND_QUERY_B).await?;
         let num_rows = connection
             .execute(
                 &statement,
                 &[&self.shard, &next_seq_no, &data, &expct_seq_no],
             )
+            .await?;
+        self.metrics
+            .record_measure("append", start.elapsed().as_millis() as u64)
             .await?;
 
         if num_rows == 0 {
@@ -246,9 +303,13 @@ impl ShardSimulation {
         )";
 
         let connection = self.client.get_connection().await?;
+        let start = Instant::now();
         let statement = connection.prepare_cached(TRUNCATE_QUERY).await?;
         let num_rows = connection
             .execute(&statement, &[&self.shard, &point])
+            .await?;
+        self.metrics
+            .record_measure("append", start.elapsed().as_millis() as u64)
             .await?;
         tracing::info!(?num_rows, num_appends = %self.state_num_appends, shard = %self.shard, "truncated rows");
         self.min_seq_no = point;
