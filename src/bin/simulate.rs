@@ -16,7 +16,7 @@ use rand_distr::Normal;
 use tokio_postgres::config::SslMode;
 use tracing_subscriber::EnvFilter;
 
-const MAX_APPENDS_BEFORE_TRUNCATE: u32 = 5000;
+const MAX_APPENDS_BEFORE_TRUNCATE: u32 = 1000;
 const MAX_STATE_BYTES: u32 = 4000;
 
 /// Program to generate some mock data that mimics consensus.
@@ -158,7 +158,7 @@ impl ShardSimulation {
 
             // Scale the sleep based on
             let sleep_duration = self.sleep_duration() * num_failures;
-            let sleep_duration = sleep_duration.max(Duration::from_secs(16));
+            let sleep_duration = sleep_duration.min(Duration::from_secs(16));
             if num_failures > 5 {
                 tracing::info!(?sleep_duration, shard = %self.shard, "sleeping");
             } else {
