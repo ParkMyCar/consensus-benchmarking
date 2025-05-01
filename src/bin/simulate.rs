@@ -6,6 +6,8 @@ cargo r --bin simulate -- \
     --password <password>
 */
 
+use std::time::Duration;
+
 use clap::Parser;
 use consensus_benchmarking::PostgresClient;
 use rand::rngs::SmallRng;
@@ -135,6 +137,8 @@ impl ShardSimulation {
     pub async fn run(&mut self) {
         let mut num_failures = 1;
         loop {
+            tracing::debug!(shard = %self.shard, "running iteration");
+
             let result = if let Some(point) = self.should_truncate() {
                 self.truncate(point).await
             } else {
@@ -142,9 +146,11 @@ impl ShardSimulation {
             };
             // Only print an error if we've failed many times in a row.
             if let Err(err) = result {
-                num_failures += 1;
-                if num_failures > 5 {
-                    tracing::error!(?err, "something failed");
+                if !err.to_string().contains("had to update") {
+                    num_failures += 1;
+                    if num_failures > 5 {
+                        tracing::error!(?err, "something failed");
+                    }
                 }
             } else {
                 num_failures = 1;
@@ -152,6 +158,7 @@ impl ShardSimulation {
 
             // Scale the sleep based on
             let sleep_duration = self.sleep_duration() * num_failures;
+            let sleep_duration = sleep_duration.max(Duration::from_secs(16));
             if num_failures > 5 {
                 tracing::info!(?sleep_duration, shard = %self.shard, "sleeping");
             } else {
