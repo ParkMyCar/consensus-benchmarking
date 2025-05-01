@@ -13,6 +13,7 @@ const DEFAULT_WAIT_TIMEOUT: std::time::Duration = std::time::Duration::from_secs
 const DEFAULT_MAX_SIZE: usize = 120;
 
 static COUNTER: AtomicUsize = AtomicUsize::new(0);
+static TOTAL_COUNT: AtomicUsize = AtomicUsize::new(0);
 
 #[derive(Clone)]
 pub struct PostgresClient {
@@ -64,7 +65,8 @@ pub struct ConnectionWrapper {
 impl ConnectionWrapper {
     pub fn new(obj: Object) -> ConnectionWrapper {
         let idx = COUNTER.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-        tracing::info!(%idx, "returning new connection");
+        let total = TOTAL_COUNT.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        tracing::info!(%idx, %total, "returning new connection");
         ConnectionWrapper { conn: obj, idx }
     }
 }
@@ -79,6 +81,7 @@ impl Deref for ConnectionWrapper {
 
 impl Drop for ConnectionWrapper {
     fn drop(&mut self) {
-        tracing::info!(idx = %self.idx, "dropping connection");
+        let total = TOTAL_COUNT.fetch_sub(1, std::sync::atomic::Ordering::SeqCst);
+        tracing::info!(idx = %self.idx, %total, "dropping connection");
     }
 }
