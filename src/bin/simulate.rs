@@ -213,7 +213,7 @@ impl ShardSimulation {
 
         let expct_seq_no = self.max_seq_no;
         let next_seq_no = expct_seq_no.checked_add(1).unwrap();
-        let data = self.random_state();
+        let data = vec![42u8; 8];
 
         let num_rows = connection
             .execute(
