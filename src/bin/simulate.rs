@@ -116,7 +116,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         println!("=== operation: {op}");
         for v in histogram.iter_recorded() {
             println!(
-                "{}'th percentile of data is {} with {} samples",
+                "{}'th percentile of data is {} milliseconds with {} samples",
                 v.percentile(),
                 v.value_iterated_to(),
                 v.count_at_value()
@@ -304,7 +304,7 @@ impl ShardSimulation {
             .execute(&statement, &[&self.shard, &point])
             .await?;
         self.metrics
-            .record_measure("append", start.elapsed().as_millis() as u64)
+            .record_measure("truncate", start.elapsed().as_millis() as u64)
             .await?;
         tracing::info!(?num_rows, num_appends = %self.state_num_appends, shard = %self.shard, "truncated rows");
         self.min_seq_no = point;
