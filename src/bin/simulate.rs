@@ -93,33 +93,38 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .collect();
     tracing::info!(num_shards = %shards.len(), "starting simulation");
 
+    let mult = 2;
+    let workers = shards.len() * mult;
     let metrics = Arc::new(Metrics::new(["append".into(), "truncate".into()]));
-    let mut tasks = Vec::with_capacity(shards.len());
-    for shard in shards {
-        let mut simulation = ShardSimulation::new(
-            pool.clone(),
-            &mut rng,
-            shard,
-            metrics.clone(),
-            args.iterations,
-        )
-        .await?;
-        let handle = tokio::spawn(async move {
-            simulation.run().await;
-        });
-        tasks.push(handle);
+    let mut tasks = Vec::with_capacity(workers);
+    for _ in 0..mult {
+        for shard in shards.iter() {
+            let mut simulation = ShardSimulation::new(
+                pool.clone(),
+                &mut rng,
+                shard.clone(),
+                metrics.clone(),
+                args.iterations,
+            )
+            .await?;
+            let handle = tokio::spawn(async move {
+                simulation.run().await;
+            });
+            tasks.push(handle);
+        }
     }
 
     let results = futures::future::join_all(tasks).await;
     println!("{results:?}");
     for (op, histogram) in metrics.get_map().await.iter() {
-        println!("=== operation: {op}");
-        for v in histogram.iter_recorded() {
+        println!("\n=== operation: {op}");
+        for q in [0.5, 0.95, 0.99, 1.0] {
+            let quantile_value= histogram.value_at_quantile(q);
             println!(
-                "{}'th percentile of data is {} milliseconds with {} samples",
-                v.percentile(),
-                v.value_iterated_to(),
-                v.count_at_value()
+                "{}'th percentile: {} milliseconds {} samples",
+                q * 100.0,
+                quantile_value,
+                histogram.count_at(quantile_value),
             );
         }
     }
@@ -263,7 +268,7 @@ impl ShardSimulation {
         let data = vec![42u8; 8];
 
         let start = Instant::now();
-        let statement = connection.prepare_cached(APPEND_QUERY_B).await?;
+        let statement = connection.prepare_cached(APPEND_QUERY_A).await?;
         let num_rows = connection
             .execute(
                 &statement,
