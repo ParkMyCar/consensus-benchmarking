@@ -65,7 +65,7 @@ impl ConnectionWrapper {
     pub fn new(obj: Object) -> ConnectionWrapper {
         let idx = COUNTER.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
         let total = TOTAL_COUNT.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-        tracing::info!(%idx, %total, "returning new connection");
+        // tracing::info!(%idx, %total, "returning new connection");
         ConnectionWrapper { conn: obj, idx }
     }
 }
@@ -81,6 +81,6 @@ impl Deref for ConnectionWrapper {
 impl Drop for ConnectionWrapper {
     fn drop(&mut self) {
         let total = TOTAL_COUNT.fetch_sub(1, std::sync::atomic::Ordering::SeqCst);
-        tracing::info!(idx = %self.idx, %total, "dropping connection");
+        // tracing::info!(idx = %self.idx, %total, "dropping connection");
     }
 }
