@@ -70,10 +70,10 @@ impl Metrics {
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    console_subscriber::init();
-    // tracing_subscriber::fmt()
-    //     .with_env_filter(EnvFilter::from_default_env())
-    //     .init();
+    // console_subscriber::init();
+    tracing_subscriber::fmt()
+        .with_env_filter(EnvFilter::from_default_env())
+        .init();
     let args = Args::parse();
 
     let mut pg_config = tokio_postgres::Config::from_str(&args.url)?;
