@@ -70,9 +70,10 @@ impl Metrics {
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    tracing_subscriber::fmt()
-        .with_env_filter(EnvFilter::from_default_env())
-        .init();
+    console_subscriber::init();
+    // tracing_subscriber::fmt()
+    //     .with_env_filter(EnvFilter::from_default_env())
+    //     .init();
     let args = Args::parse();
 
     let mut pg_config = tokio_postgres::Config::from_str(&args.url)?;
@@ -292,15 +293,37 @@ impl ShardSimulation {
     }
 
     async fn truncate(&mut self, point: i64) -> Result<(), anyhow::Error> {
-        static TRUNCATE_QUERY: &str = "DELETE FROM materialize1.consensus
+        static TRUNCATE_QUERY_A: &str = "DELETE FROM materialize1.consensus
         WHERE shard = $1 AND sequence_number < $2 AND
         EXISTS (
             SELECT * FROM materialize1.consensus WHERE shard = $1 AND sequence_number >= $2
         )";
 
+        static TRUNCATE_QUERY_B: &str = "
+        WITH newer_exists AS (
+            SELECT * FROM materialize1.consensus
+            WHERE shard = $1
+                AND sequence_number >= $2
+            ORDER BY sequence_number ASC
+            LIMIT 1
+            FOR UPDATE
+        ),
+        to_lock AS (
+            SELECT ctid FROM materialize1.consensus
+            WHERE shard = $1
+            AND sequence_number < $2
+            AND EXISTS (SELECT * FROM newer_exists)
+            ORDER BY sequence_number DESC
+            FOR UPDATE
+        )
+        DELETE FROM materialize1.consensus
+        USING to_lock
+        WHERE materialize1.consensus.ctid = to_lock.ctid;
+        ";
+
         let connection = self.client.get_connection().await?;
         let start = Instant::now();
-        let statement = connection.prepare_cached(TRUNCATE_QUERY).await?;
+        let statement = connection.prepare_cached(TRUNCATE_QUERY_B).await?;
         let num_rows = connection
             .execute(&statement, &[&self.shard, &point])
             .await?;

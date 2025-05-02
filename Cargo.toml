@@ -9,18 +9,14 @@ name = "generate"
 [dependencies]
 anyhow = "1"
 clap = { version = "4", features = ["derive"] }
+console-subscriber = "0.1"
 deadpool-postgres = "0.14"
 futures = "0.3"
 native-tls = "0.2"
 postgres-native-tls = "0.5"
 rand = { version = "0.9", features = ["small_rng"] }
 rand_distr = "0.5"
-tokio = { version = "1.44.1", default-features = false, features = [
-    "macros",
-    "sync",
-    "rt",
-    "rt-multi-thread",
-] }
+tokio = { version = "1.44.1", default-features = false, features = ["full", "tracing"] }
 tokio-postgres = "0.7.8"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3.19", features = ["env-filter", "json"] }
