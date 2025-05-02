@@ -199,9 +199,7 @@ impl ShardSimulation {
             if let Err(err) = result {
                 if !err.to_string().contains("had to update") {
                     num_failures += 1;
-                    if num_failures > 5 {
-                        tracing::error!(?err, "something failed");
-                    }
+                    tracing::error!(?err, "something failed");
                 }
             } else {
                 num_failures = 1;
@@ -210,7 +208,7 @@ impl ShardSimulation {
             // Scale the sleep based on
             let sleep_duration = self.sleep_duration() * num_failures;
             let sleep_duration = sleep_duration.min(Duration::from_secs(16));
-            if num_failures > 5 {
+            if num_failures > 1 {
                 tracing::info!(?sleep_duration, shard = %self.shard, "sleeping");
             } else {
                 tracing::debug!(?sleep_duration, shard = %self.shard, "sleeping");
