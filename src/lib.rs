@@ -40,7 +40,7 @@ impl PostgresClient {
                 Box::pin(async move {
                     tracing::warn!("creating connection");
                     client.batch_execute(
-                    "SET SESSION CHARACTERISTICS AS TRANSACTION ISOLATION LEVEL REPEATABLE READ",
+                    "SET SESSION CHARACTERISTICS AS TRANSACTION ISOLATION LEVEL SERIALIZABLE",
                 ).await.map_err(|e| HookError::Backend(e))
                 })
             }))
