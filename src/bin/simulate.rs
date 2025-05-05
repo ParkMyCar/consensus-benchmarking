@@ -203,7 +203,9 @@ impl ShardSimulation {
             if let Err(err) = result {
                 if !err.to_string().contains("had to update") {
                     num_failures += 1;
-                    tracing::error!(?err, "something failed");
+                    if num_failures > 3 {
+                        tracing::error!(?err, "something failed");
+                    }
                 }
             } else {
                 num_failures = 1;
