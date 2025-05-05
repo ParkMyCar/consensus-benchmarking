@@ -84,7 +84,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let pool = PostgresClient::open(pg_config)?;
     let mut rng = rand::rng();
 
-    let client = pool.get_connection().await?;
+    let client = pool.get_connection(Some("start".into())).await?;
     let result = client
         .query("SELECT DISTINCT(shard) FROM materialize1.consensus", &[])
         .await?;
@@ -96,6 +96,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let metrics = Arc::new(Metrics::new(["append".into(), "truncate".into()]));
     let mut tasks = Vec::with_capacity(shards.len());
+    drop(client);
     for shard in shards {
         let mut simulation = ShardSimulation::new(
             pool.clone(),
@@ -159,7 +160,9 @@ impl ShardSimulation {
         metrics: Arc<Metrics>,
         iterations: u32,
     ) -> Result<Self, Box<dyn std::error::Error>> {
-        let connection = client.get_connection().await?;
+        let connection = client
+            .get_connection(Some(format!("new simulation {shard}")))
+            .await?;
         let mut result = connection
             .query(
                 "SELECT MAX(sequence_number), MIN(sequence_number) FROM materialize1.consensus WHERE shard = $1",
@@ -195,6 +198,7 @@ impl ShardSimulation {
             } else {
                 self.append().await
             };
+            tracing::debug!(shard = %self.shard, "finish iteration");
             // Only print an error if we've failed many times in a row.
             if let Err(err) = result {
                 if !err.to_string().contains("had to update") {
@@ -222,9 +226,14 @@ impl ShardSimulation {
         static HEAD_QUERY: &str = "SELECT sequence_number, data FROM materialize1.consensus
              WHERE shard = $1 ORDER BY sequence_number DESC LIMIT 1";
 
-        let connection = self.client.get_connection().await?;
+        tracing::debug!(shard = %self.shard, "starting update head");
+        let connection = self
+            .client
+            .get_connection(Some(format!("update head {}", self.shard)))
+            .await?;
         let statement = connection.prepare_cached(HEAD_QUERY).await?;
         let mut result = connection.query(&statement, &[&self.shard]).await?;
+        tracing::debug!(shard = %self.shard, "finished update head");
         let row = result.pop().expect("at least 1");
         assert!(result.is_empty(), "at most 1");
 
@@ -257,7 +266,11 @@ impl ShardSimulation {
         WHERE last_seq.sequence_number = $4;
         ";
 
-        let connection = self.client.get_connection().await?;
+        tracing::debug!(shard = %self.shard, "starting append");
+        let connection = self
+            .client
+            .get_connection(Some(format!("appen {}", self.shard)))
+            .await?;
         let expct_seq_no = self.max_seq_no;
         let next_seq_no = expct_seq_no.checked_add(1).unwrap();
         let data = vec![42u8; 8];
@@ -270,12 +283,14 @@ impl ShardSimulation {
                 &[&self.shard, &next_seq_no, &data, &expct_seq_no],
             )
             .await?;
+        tracing::debug!(shard = %self.shard, "finished append");
         self.metrics
             .record_measure("append", start.elapsed().as_millis() as u64)
             .await?;
 
         if num_rows == 0 {
             tracing::debug!(%expct_seq_no, shard = %self.shard, "wrong expected sequence number");
+            drop(connection);
             self.update_head().await?;
             Err(anyhow::anyhow!("had to update sequence number"))
         } else if num_rows == 1 {
@@ -319,12 +334,17 @@ impl ShardSimulation {
         WHERE materialize1.consensus.ctid = to_lock.ctid;
         ";
 
-        let connection = self.client.get_connection().await?;
+        tracing::debug!(shard = %self.shard, "starting truncate");
+        let connection = self
+            .client
+            .get_connection(Some(format!("truncate {}", self.shard)))
+            .await?;
         let start = Instant::now();
         let statement = connection.prepare_cached(TRUNCATE_QUERY_B).await?;
         let num_rows = connection
             .execute(&statement, &[&self.shard, &point])
             .await?;
+        tracing::debug!(shard = %self.shard, "finished truncate");
         self.metrics
             .record_measure("truncate", start.elapsed().as_millis() as u64)
             .await?;

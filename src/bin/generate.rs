@@ -54,7 +54,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 .map_err(|e| format!("{e}"))?;
 
             println!("processing {shard}");
-            let connection = pool_.get_connection().await.map_err(|e| format!("{e}"))?;
+            let connection = pool_
+                .get_connection(Some("generate".into()))
+                .await
+                .map_err(|e| format!("{e}"))?;
             let shard_entries = generate_data_for_shard(shard, &mut rng);
 
             for (shard_id, seq_no, data) in shard_entries {

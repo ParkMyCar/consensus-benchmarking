@@ -9,7 +9,7 @@ use native_tls::TlsConnector;
 use postgres_native_tls::MakeTlsConnector;
 
 const DEFAULT_WAIT_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(60);
-const DEFAULT_MAX_SIZE: usize = 120;
+const DEFAULT_MAX_SIZE: usize = 100;
 
 static COUNTER: AtomicUsize = AtomicUsize::new(0);
 static TOTAL_COUNT: AtomicUsize = AtomicUsize::new(0);
@@ -50,9 +50,12 @@ impl PostgresClient {
         Ok(PostgresClient { conn_pool })
     }
 
-    pub async fn get_connection(&self) -> Result<ConnectionWrapper, PoolError> {
+    pub async fn get_connection(
+        &self,
+        context: Option<String>,
+    ) -> Result<ConnectionWrapper, PoolError> {
         let conn = self.conn_pool.get().await?;
-        Ok(ConnectionWrapper::new(conn))
+        Ok(ConnectionWrapper::new(conn, context))
     }
 }
 
@@ -62,10 +65,10 @@ pub struct ConnectionWrapper {
 }
 
 impl ConnectionWrapper {
-    pub fn new(obj: Object) -> ConnectionWrapper {
+    pub fn new(obj: Object, context: Option<String>) -> ConnectionWrapper {
         let idx = COUNTER.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
         let total = TOTAL_COUNT.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-        // tracing::info!(%idx, %total, "returning new connection");
+        // tracing::info!(%idx, %total, ?context, "returning new connection");
         ConnectionWrapper { conn: obj, idx }
     }
 }
