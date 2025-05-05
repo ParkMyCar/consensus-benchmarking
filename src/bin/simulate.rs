@@ -278,7 +278,7 @@ impl ShardSimulation {
         let data = vec![42u8; 8];
 
         let start = Instant::now();
-        let statement = connection.prepare_cached(APPEND_QUERY_A).await?;
+        let statement = connection.prepare_cached(APPEND_QUERY_B).await?;
         let num_rows = connection
             .execute(
                 &statement,
