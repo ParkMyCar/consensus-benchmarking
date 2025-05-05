@@ -212,7 +212,7 @@ impl ShardSimulation {
             // Scale the sleep based on
             let sleep_duration = self.sleep_duration() * num_failures;
             let sleep_duration = sleep_duration.min(Duration::from_secs(16));
-            if num_failures > 1 {
+            if sleep_duration > std::time::Duration::from_secs(5) {
                 tracing::info!(?sleep_duration, shard = %self.shard, "sleeping");
             } else {
                 tracing::debug!(?sleep_duration, shard = %self.shard, "sleeping");
